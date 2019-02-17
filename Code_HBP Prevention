@@ -1,5 +1,5 @@
 rm(list=c())
-setwd("~/R/500 cities project ")
+setwd("~/Desktop/500 Cities Health/")
 install.packages("tidyr")
 library(tidyr)
 library(caret)
