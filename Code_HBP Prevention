@@ -1,0 +1,132 @@
+rm(list=c())
+setwd("~/R/500 cities project ")
+install.packages("tidyr")
+library(tidyr)
+library(caret)
+
+#read in dataset
+BPdata<- read.csv("High_BP_Dataset.csv",header = TRUE)
+attach(BPdata)
+dim(BPdata)  #display number of rows and columns in the data set
+head(BPdata)  #display first six rows of the data set
+summary(BPdata) 
+str(BPdata)
+
+#Make region dummy variables factors
+BPdata$NE <- as.factor(BPdata$NE)
+BPdata$MW <- as.factor(BPdata$MW)
+BPdata$W <- as.factor(BPdata$W)
+str(BPdata)
+
+#remove row with NA value for Health Insurance Variable-- not allowed for cross validation
+which(is.na(BPdata$Health.Insurance))
+bpdata<-BPdata[-4529,]
+summary(bpdata)
+
+#Split the data into train and test sets: 67% for training data & 33% for test data
+
+trainRows <- createDataPartition(bpdata$Data_Value, p = .67,list= FALSE)
+head(trainRows)
+
+# Subset the data into objects for training using
+# integer sub-setting.
+trainData <- bpdata[trainRows, ]
+
+# Do the same for the test set using negative integers.
+testData <- bpdata[-trainRows, ]
+str(trainData)
+
+#Run regression tree
+library(rpart)
+install.packages(rpart.plot)
+library(rpart.plot)
+regtree<-rpart(Data_Value~.,data=trainData)
+print(regtree)
+rpart.plot(regtree)
+
+#Define control parameter- adjust after finding the one that gives lowest root mean sq error 
+rpartContr=rpart.control(minsplit = 10,cp=1e-09, minbucket = 4)  
+
+#Run cross validation on train data set to find where to prune the tree
+library(caret)
+fitControl <- trainControl(method = "repeatedcv",number = 10,repeats = 3)
+
+set.seed(1234)  #set seed to allow replication of randomization
+
+#build second tree using cross validation
+regtree2 = train(Data_Value~.,
+                 data=trainData, method="rpart",
+                 metric="RMSE",
+                 control = rpartContr,
+                 trControl=fitControl)
+varImp(regtree2) #gives the important variables
+library(rpart.plot)
+install.packages(maptree)
+library(maptree)
+rpart.plot(regtree2,cex=1.5) #gives cp plot of size of tree vs ROC-- choose cp with lowest error
+regtree2    #gives summary of model     
+
+#create pruned tree using optimal cp value of 0.08376481 to minimize RMSE
+prunetree <- rpart(Data_Value~., data=trainData, cp=0.08301467)
+
+rpart.plot(prunetree)
+summary(prunetree)
+
+#predictions for validation
+pred<- predict(prunetree, newdata=testData)
+
+#plot predicted vs actual values
+plot(x=pred, y=testData$Data_Value);text(main="Predicted vs Actual")
+ggplot(testData, aes(x = pred, y = Data_Value)) + 
+  geom_point() + 
+  geom_abline() 
+
+# calculate the residual
+resid = testData$Data_Value - pred    
+rtmse  = sqrt(mean(resid^2))
+rtmse 
+
+#Run a randomForest to compare results & important variables
+
+library(caTools)
+library(ranger)
+
+# the outcome column
+outcome <- "Data_Value"
+
+# The input variables
+(vars <- c("Annual.Checkup","Binge.Drinking",
+           "Cholesterol.Screening","Current.Smoking","Dental.Visit","Health.Insurance",
+           "Obesity","Physical.Activity","Sleep","NE",
+           "MW","W"))
+
+# Create the formula string for High_BP as a function of the inputs
+(fmla <- paste(outcome, "~", paste(vars, collapse = " + ")))
+
+# Fit and print the random forest model
+(High_BP_Dataset_rf <- ranger(fmla, 
+                              trainData, 
+                              importance="permutation",
+                              num.trees = 500, 
+                              respect.unordered.factors = "order"))
+
+# Identify important variables
+importance(High_BP_Dataset_rf)
+
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+
+# Make predictions on the test data
+test$pred <- predict(High_BP_Dataset_rf, testData)$predictions
+
+# Calculate the RMSE of the predictions
+residual = Data_Value - pred      # calculate the residual
+rmserror  = sqrt(mean(residual^2)) # calculate rmse
+rmserror
+
+
+# Plot actual outcome vs predictions (predictions on x-axis)
+ggplot(testData, aes(x = pred, y = Data_Value)) + 
+  geom_point() + 
+  geom_abline()   
