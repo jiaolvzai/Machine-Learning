@@ -1,0 +1,64 @@
+setwd("~/Desktop/Customer Files/")
+dataset <- read.csv("~/Desktop/Customer Files/data.csv", stringsAsFactors=FALSE)
+#install.packages("factoextra")
+library(factoextra)
+
+#prepare dataset to proper format
+dataset[dataset=='NULL'] <- as.numeric(0)
+dataset[,8:36] <- as.data.frame(lapply(dataset[,8:36], as.numeric))
+
+#split the dataset into label (indicating user profile) and data (viewing habits that forms the cluster)
+dataset.labs <-dataset[,1:7]
+dataset.data <-dataset[,8:36]
+
+
+#run PCA to get principal coomponents with each component a linear combination of viewing performance on different time slot
+ppc=prcomp(dataset.data, scale=TRUE)
+
+#Visualize eigenvalues (scree plot). Show the percentage of variances explained by each principal component
+#choose 7
+fviz_eig(ppc)
+
+
+# Determine number of clusters, 6 is appropriate
+wss <- (nrow(ppc$x[,1:7])-1)*sum(apply(ppc$x[,1:7],2,var))
+
+for (i in 2:15) wss[i] <- sum(kmeans(ppc$x[,1:7], 
+                                     centers=i)$withinss)
+
+plot(1:15, wss, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares")
+
+#run k-means clustering
+set.seed(1234)
+kmeans <- kmeans(ppc$x[,1:7],centers=6,nstart = 30)
+kmeans$cluster
+
+
+pdf(kmeans.pdf,width=6,height=4,paper='special') 
+
+
+plot(ppc$x[,1:7], col=kmeans$cluster, pch=19, xlab="Z1", ylab="Z2",
+     xlim=c(-60,90),ylim=c(-70,30))
+
+dev.off()
+
+
+#join the clustering result to the labels of dataset
+profile<-cbind(CLUSTER=kmeans$cluster,dataset.labs)
+
+#show the distribution of clustering
+table(profile$CLUSTER)
+
+#pick the clustering with the largest proportion and examine the profile
+cluster3 <- profile[profile$CLUSTER == 3,]
+head(cluster3)
+
+table(cluster3$WEEKDAY_ID)
+table(cluster3$GENDER_ID)
+table(cluster3$AGE_ID)
+table(cluster3$REGION_ID)
+table(cluster3$CHANNEL_ID)
+table(cluster3$GENRE_ID)
+
+write.table(profile, file="profile_alldata.csv",sep=",",row.names=F)
